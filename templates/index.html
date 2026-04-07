@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>清新綠色票券一番賞 - 完整功能版</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary: #10b981;
+            --secondary: #34d399;
+            --accent: #f9f871;
+            --bg: #f0fdf4;
+            --dark: #2d3748;
+            --white: #ffffff;
+            --danger: #e63946;
+        }
+
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: var(--bg);
+            color: var(--dark);
+            margin: 0;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; overflow-x: hidden; padding-bottom: 50px;
+        }
+
+        h1 { margin-top: 20px; font-weight: 900; color: var(--secondary); text-shadow: 3px 3px 0px var(--white); font-size: 2.5rem; }
+
+        /* --- 3D 舞台 --- */
+        #stage { width: 100vw; height: 40vh; perspective: 1200px; display: flex; justify-content: center; align-items: center; position: relative; }
+        #pool-container { width: 300px; height: 300px; position: relative; transform-style: preserve-3d; animation: rotatePool 40s infinite linear; transition: animation-play-state 0.2s; }
+        #pool-container:hover { animation-play-state: paused !important; }
+        @keyframes rotatePool { from { transform: rotateY(0deg) rotateX(10deg); } to { transform: rotateY(360deg) rotateX(10deg); } }
+
+        /* --- 票券籤條 --- */
+        .ticket-item {
+            width: 50px; height: 85px; background: var(--white); border: 3px solid var(--dark); border-radius: 8px;
+            position: absolute; top: 50%; left: 50%; margin-top: -42px; margin-left: -25px; cursor: pointer;
+            display: flex; justify-content: center; align-items: center; box-shadow: 4px 4px 0px rgba(0,0,0,0.1);
+            transform: translate3d(var(--tx), var(--ty), var(--tz));
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.2s, box-shadow 0.2s;
+            backface-visibility: visible;
+            clip-path: polygon(0% 10%, 10% 10%, 10% 0%, 90% 0%, 90% 10%, 100% 10%, 100% 90%, 90% 90%, 90% 100%, 10% 100%, 10% 90%, 0% 90%);
+        }
+        .ticket-item::after { content: "★"; color: var(--dark); font-size: 20px; font-weight: bold; }
+        .ticket-item:hover { 
+            transform: translate3d(var(--tx), var(--ty), calc(var(--tz) + 50px)) scale(1.35) !important;
+            background: var(--accent) !important; box-shadow: 0 0 25px rgba(16, 185, 129, 0.5); z-index: 9999 !important;
+        }
+
+        /* --- 飛向螢幕的票券 --- */
+        #ticket-fly {
+            position: fixed; width: 130px; height: 230px; display: none; z-index: 10000;
+            text-align: center; writing-mode: vertical-rl; font-size: 24px; font-weight: 900; letter-spacing: 5px;
+            border-radius: 15px; border: 4px solid var(--dark); box-shadow: 15px 15px 0px rgba(0,0,0,0.15);
+            padding: 20px 10px; pointer-events: none; line-height: 1.2;
+            clip-path: polygon(0% 10%, 10% 10%, 10% 0%, 90% 0%, 90% 10%, 100% 10%, 100% 90%, 90% 90%, 90% 100%, 10% 100%, 10% 90%, 0% 90%);
+        }
+        .gold-fly { background: var(--accent); color: var(--dark); }
+        .silver-fly { background: var(--primary); color: var(--white); }
+        .normal-fly { background: var(--secondary); color: var(--white); }
+
+        /* --- 即時戰況列表：垂直排列 --- */
+        #prize-legend { width: 90%; max-width: 450px; display: flex; flex-direction: column; gap: 12px; padding: 20px; z-index: 10; }
+        .legend-card { background: var(--white); padding: 15px 20px; border-radius: 18px; border: 3px solid var(--dark); display: flex; justify-content: space-between; align-items: center; box-shadow: 5px 5px 0px rgba(0,0,0,0.05); transition: transform 0.2s; }
+        .legend-card:hover { transform: translateX(5px); }
+        .legend-count { font-weight: 900; color: var(--secondary); font-size: 1.3rem; }
+
+        /* --- 按鈕 --- */
+        .main-controls { display: flex; gap: 20px; margin-bottom: 10px; z-index: 10; }
+        .btn { padding: 12px 25px; border-radius: 50px; border: 3px solid var(--dark); cursor: pointer; font-weight: bold; transition: 0.2s; box-shadow: 4px 4px 0px var(--dark); }
+        .btn-primary { background: var(--secondary); color: white; }
+        .btn-outline { background: var(--white); color: var(--dark); }
+        .btn-danger { background: var(--white); color: var(--danger); border-color: var(--danger); box-shadow: 4px 4px 0px var(--danger); }
+        
+        /* --- 高級設定介面 --- */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); justify-content: center; align-items: center; z-index: 20000; }
+        .modal-content { background: var(--white); width: 90%; max-width: 700px; height: 85vh; border-radius: 30px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15); border: 4px solid var(--dark); }
+        .modal-header { padding: 20px 30px; background: #fffafb; border-bottom: 2px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .tab-bar { display: flex; background: #f0f0f0; padding: 6px; margin: 15px 30px; border-radius: 15px; }
+        .tab-btn { flex: 1; padding: 12px; border: none; background: none; cursor: pointer; font-weight: bold; border-radius: 12px; color: #888; }
+        .tab-btn.active { background: var(--white); color: var(--secondary); box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .tab-content { flex: 1; overflow-y: auto; padding: 0 30px 30px 30px; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .prize-item-card { background: #fff; border: 2px solid #eee; padding: 15px; border-radius: 20px; margin-bottom: 15px; }
+        .list-header { cursor: pointer; display: flex; justify-content: space-between; background: #f9f9f9; padding: 12px; border-radius: 12px; margin-bottom: 10px; }
+        .item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; padding: 10px; }
+        .prob-badge { background: #e8fcf4; color: #20b07a; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1 id="ui-title">🌸 清新綠色票券一番賞 🌸</h1>
+
+    <div class="main-controls">
+        <button class="btn btn-outline" onclick="openModal()">⚙️ 系統設定</button>
+        <button class="btn btn-primary" onclick="initPool()">🔄 重新洗牌</button>
+    </div>
+
+    <div id="stage">
+        <div id="pool-container"></div>
+    </div>
+
+    <div id="prize-legend"></div>
+    <div id="ticket-fly"></div>
+
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin:0; font-size: 1.4rem;">⚙️ 參數設定</h2>
+                <div>
+                    <button class="btn btn-outline" style="padding: 8px 20px; box-shadow:none; border-width:2px;" onclick="closeModal()">取消</button>
+                    <button class="btn btn-primary" style="padding: 8px 20px; box-shadow:none; border-width:2px;" onclick="confirmSettings()">確定</button>
+                </div>
+            </div>
+            <div class="tab-bar">
+                <button class="tab-btn active" onclick="switchTab(0)">列表</button>
+                <button class="tab-btn" onclick="switchTab(1)">紀錄</button>
+                <button class="tab-btn" onclick="switchTab(2)">編輯</button>
+                <button class="tab-btn" onclick="switchTab(3)">其他</button>
+            </div>
+            <div class="tab-content" id="modal-body-content">
+                <div class="panel active" id="p-list">
+                    <div style="margin-bottom:20px; display:flex; gap:10px;">
+                        <button class="btn btn-outline" style="font-size:0.8rem; padding:8px 15px;" onclick="allAction('out')">📤 全部取出</button>
+                        <button class="btn btn-outline" style="font-size:0.8rem; padding:8px 15px;" onclick="allAction('in')">📥 全部放回</button>
+                    </div>
+                    <div id="list-render"></div>
+                </div>
+
+                <div class="panel" id="p-record">
+                    <button class="btn btn-danger" style="margin-bottom:20px; font-size:0.9rem;" onclick="clearHistory()">🗑️ 清除所有紀錄</button>
+                    <ul id="record-render" style="line-height: 2.2; color: #555; padding-left: 15px;"></ul>
+                </div>
+
+                <div class="panel" id="p-edit"><div id="edit-render"></div></div>
+
+                <div class="panel" id="p-other"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let prizes = [
+            { id: 'A', name: 'A賞 超稀有翡翠模型', items: [{drawn:false}] },
+            { id: 'B', name: 'B賞 紀念湖水毛巾', items: [{drawn:false}, {drawn:false}] },
+            { id: 'C', name: 'C賞 造型掛飾', items: Array.from({length:10}, () => ({drawn:false})) }
+        ];
+        let history = [];
+        let config = { title: "🌸 清新綠色票券一番賞 🌸", remove: true };
+        let tempPrizes = [];
+
+        function initPool() {
+            const container = $('#pool-container');
+            container.empty();
+            let activeItems = [];
+            prizes.forEach(p => p.items.forEach(it => { if(!it.drawn) activeItems.push({p, it}); }));
+
+            activeItems.forEach((obj, i) => {
+                const $t = $('<div class="ticket-item"></div>');
+                const theta = Math.acos(-1 + (2 * i) / activeItems.length);
+                const phi = Math.sqrt(activeItems.length * Math.PI) * theta;
+                const r = 140;
+                const x = r * Math.sin(theta) * Math.cos(phi);
+                const y = r * Math.sin(theta) * Math.sin(phi);
+                const z = r * Math.cos(theta);
+
+                const el = $t.get(0);
+                el.style.setProperty('--tx', `${x}px`);
+                el.style.setProperty('--ty', `${y}px`);
+                el.style.setProperty('--tz', `${z}px`);
+                
+                $t.on('click', function(e) { e.stopPropagation(); handleDraw($(this), obj); });
+                container.append($t);
+            });
+            updateLegend();
+        }
+
+        let isDrawing = false;
+        function handleDraw($el, res) {
+            if (isDrawing) return;
+            isDrawing = true;
+            $('#pool-container').css('animation-play-state', 'paused');
+            
+            const startPos = $el.offset();
+            $el.css('visibility', 'hidden');
+
+            let flyClass = res.p.id === 'A' ? 'gold-fly' : (res.p.id === 'B' ? 'silver-fly' : 'normal-fly');
+
+            $('#ticket-fly').text(res.p.name).removeClass('gold-fly silver-fly normal-fly').addClass(flyClass)
+                .css({ display: 'block', top: startPos.top, left: startPos.left, transform: 'scale(0.1)', opacity: 1 })
+                .animate({ top: $(window).height()/2 - 115, left: $(window).width()/2 - 65 }, {
+                    duration: 900,
+                    step: function(now, fx) {
+                        if (fx.prop === "top") {
+                            let prog = (now - startPos.top) / (($(window).height()/2-115) - startPos.top);
+                            $(this).css('transform', `scale(${0.1 + prog * 2.1}) rotateY(${prog * 720}deg)`);
+                        }
+                    },
+                    complete: function() {
+                        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#10b981', '#34d399', '#f9f871', '#ffffff'] });
+                        
+                        const now = new Date();
+                        const timestamp = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${now.toLocaleTimeString('zh-TW', { hour12: false })}`;
+                        
+                        setTimeout(() => {
+                            $('#ticket-fly').fadeOut(600, function() {
+                                if (config.remove) res.it.drawn = true;
+                                history.unshift(`${timestamp} - ${res.p.name}`);
+                                isDrawing = false;
+                                $('#pool-container').css('animation-play-state', ''); 
+                                initPool();
+                            });
+                        }, 2500);
+                    }
+                });
+        }
+
+        function clearHistory() { if (confirm("確定要清除所有紀錄嗎？")) { history = []; renderPanels(); } }
+
+        function openModal() {
+            tempPrizes = JSON.parse(JSON.stringify(prizes));
+            $('#set-title').val(config.title);
+            renderPanels();
+            $('#settingsModal').css('display', 'flex');
+        }
+        function closeModal() { $('#settingsModal').hide(); }
+        function confirmSettings() {
+            prizes = JSON.parse(JSON.stringify(tempPrizes));
+            config.title = $('#set-title').val();
+            $('#ui-title').text(config.title);
+            closeModal();
+            initPool();
+        }
+        function switchTab(i) {
+            $('.tab-btn').removeClass('active').eq(i).addClass('active');
+            $('.panel').removeClass('active').eq(i).addClass('active');
+            renderPanels();
+        }
+        function renderPanels() {
+            // 列表渲染
+            let lHtml = '';
+            tempPrizes.forEach((p, pi) => {
+                const rem = p.items.filter(i => !i.drawn).length;
+                lHtml += `<div class="prize-item-card"><div class="list-header" onclick="$(this).next().toggle()"><b>${p.name} (${rem}/${p.items.length})</b><span>▼</span></div><div class="item-grid" style="display:none;">${p.items.map((it, ii) => `<div class="check-tag"><input type="checkbox" ${it.drawn?'checked':''} onchange="tempPrizes[${pi}].items[${ii}].drawn=this.checked; renderPanels();"> #${ii+1}</div>`).join('')}</div></div>`;
+            });
+            $('#list-render').html(lHtml);
+
+            // 編輯渲染
+            let eHtml = '<button class="btn btn-outline" style="width:100%; margin-bottom:20px;" onclick="addTier()">＋ 新增獎項級別</button>';
+            const totalRem = tempPrizes.reduce((s, p) => s + p.items.filter(i => !i.drawn).length, 0);
+            tempPrizes.forEach((p, pi) => {
+                const rem = p.items.filter(i => !i.drawn).length;
+                const prob = totalRem > 0 ? ((rem/totalRem)*100).toFixed(2) : 0;
+                eHtml += `<div class="prize-item-card"><div style="display:flex;justify-content:space-between;align-items:center;"><input type="text" value="${p.name}" onchange="tempPrizes[${pi}].name=this.value"> <span class="prob-badge">${prob}%</span></div><div style="margin-top:10px;">數量: <button onclick="changeCount(${pi},-1)">-</button> <b>${p.items.length}</b> <button onclick="changeCount(${pi},1)">+</button> <button onclick="tempPrizes.splice(${pi},1); renderPanels();" style="float:right; color:red; border:none; background:none; cursor:pointer;">刪除</button></div></div>`;
+            });
+            $('#edit-render').html(eHtml);
+            $('#record-render').html(history.map(h => `<li>${h}</li>`).join('') || "<li>暫無紀錄</li>");
+            $('#p-other').html(`<label>標題：<input type="text" id="set-title" value="${config.title}" style="width:100%; margin-top:10px; padding:12px; border:2px solid #eee; border-radius:15px;"></label>`);
+        }
+        function changeCount(idx, delta) { if (delta > 0) tempPrizes[idx].items.push({drawn:false}); else if (tempPrizes[idx].items.length > 0) tempPrizes[idx].items.pop(); renderPanels(); }
+        function addTier() { const id = String.fromCharCode(65 + tempPrizes.length); tempPrizes.push({ id, name: id + '賞', items: Array.from({length:5}, ()=>({drawn:false})) }); renderPanels(); }
+        function allAction(type) { tempPrizes.forEach(p => p.items.forEach(it => it.drawn = (type === 'out'))); renderPanels(); }
+        function updateLegend() {
+            let html = '';
+            prizes.forEach(p => {
+                const rem = p.items.filter(i => !i.drawn).length;
+                html += `<div class="legend-card"><b>${p.name}</b> <span class="legend-count">${rem}/${p.items.length}</span></div>`;
+            });
+            $('#prize-legend').html(html);
+        }
+        $(document).ready(() => { initPool(); });
+    </script>
+</body>
+</html>
